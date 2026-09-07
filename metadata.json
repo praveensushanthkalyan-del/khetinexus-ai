@@ -1,0 +1,6 @@
+{
+  "name": "KhetiNexus AI",
+  "description": "Intelligent Agriculture & Regenerative Future: AI-powered localized agricultural advisories, crop disease diagnosis, soil health analysis, and BRICS AgriN network.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
