@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // PUBLIC COUNTRY CONFIGURATION (Read-Only)
+    match /countries/{countryCode} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // CANONICAL COUNTRY-FIRST USER NAMESPACE
+    match /countries/{countryCode}/users/{uid} {
+      allow create: if request.auth != null
+                    && request.auth.uid == uid;
+
+      allow read: if request.auth != null
+                  && request.auth.uid == uid;
+
+      allow update: if request.auth != null
+                    && request.auth.uid == uid;
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == uid;
+    }
+
+    match /countries/{countryCode}/users/{uid}/farms/{farmId} {
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.uid == uid
+                    && request.resource.data.countryCode == countryCode;
+
+      allow read: if request.auth != null
+                  && request.auth.uid == uid;
+
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.uid == uid
+                    && request.resource.data.countryCode == countryCode;
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == uid;
+    }
+
+    match /countries/{countryCode}/users/{uid}/farms/{farmId}/soilRecords/{recordId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /countries/{countryCode}/users/{uid}/farms/{farmId}/diagnoses/{diagnosisId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /countries/{countryCode}/users/{uid}/farms/{farmId}/advisories/{advisoryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /countries/{countryCode}/users/{uid}/farms/{farmId}/regenerative/{recordId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /countries/{countryCode}/users/{uid}/advisories/{advisoryId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /countries/{countryCode}/users/{uid}/diagnoses/{diagnosisId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // GLOBAL SAFETY NET - DENY BY DEFAULT
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

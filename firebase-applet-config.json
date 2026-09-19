@@ -1,0 +1,12 @@
+{
+  "projectId": "khetinexus-ai",
+  "appId": "1:1026844311602:web:ee7d293392868f43203c2b",
+  "apiKey": "AIzaSyAzxiMNFH84yN6ECGJHmfD1MmsglLwrntI",
+  "authDomain": "khetinexus-ai.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "khetinexus-ai.firebasestorage.app",
+  "messagingSenderId": "1026844311602",
+  "measurementId": "G-4MJ8C6R3S9",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

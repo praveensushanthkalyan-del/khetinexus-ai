@@ -1,0 +1,117 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile data",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "preferredLanguage": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "name", "email", "createdAt", "updatedAt"]
+    },
+    "UserFarm": {
+      "title": "UserFarm",
+      "description": "Farm entity owned by a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "country": { "type": "string" },
+        "stateRegion": { "type": "string" },
+        "location": { "type": "string" },
+        "farmSize": { "type": "number" },
+        "farmUnit": { "type": "string" },
+        "crop": { "type": "string" },
+        "cropVariety": { "type": "string" },
+        "growthStage": { "type": "string" },
+        "soilType": { "type": "string" },
+        "irrigationType": { "type": "string" },
+        "farmingPractice": { "type": "string" },
+        "isPrimary": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "country", "crop", "createdAt", "updatedAt"]
+    },
+    "SavedAdvisoryRecord": {
+      "title": "SavedAdvisoryRecord",
+      "description": "AI advisory report history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "farmId": { "type": "string" },
+        "farmName": { "type": "string" },
+        "crop": { "type": "string" },
+        "location": { "type": "string" },
+        "advisory": { "type": "object" },
+        "language": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["crop", "location", "advisory", "createdAt"]
+    },
+    "SavedSoilRecord": {
+      "title": "SavedSoilRecord",
+      "description": "Soil analysis record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "farmId": { "type": "string" },
+        "soilReport": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["farmId", "soilReport", "createdAt"]
+    },
+    "SavedDiagnosisRecord": {
+      "title": "SavedDiagnosisRecord",
+      "description": "Crop doctor diagnostic record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "farmId": { "type": "string" },
+        "diagnosis": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["farmId", "diagnosis", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Legacy user profile document"
+    },
+    "/users/{userId}/farms/{farmId}": {
+      "schema": { "$ref": "#/entities/UserFarm" },
+      "description": "Legacy farms owned by the user"
+    },
+    "/countries/{countryCode}": {
+      "schema": { "type": "object" },
+      "description": "Public country metadata document"
+    },
+    "/countries/{countryCode}/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile in country context"
+    },
+    "/countries/{countryCode}/users/{userId}/farms/{farmId}": {
+      "schema": { "$ref": "#/entities/UserFarm" },
+      "description": "Farms owned by user in country context"
+    },
+    "/countries/{countryCode}/users/{userId}/farms/{farmId}/soilRecords/{recordId}": {
+      "schema": { "$ref": "#/entities/SavedSoilRecord" },
+      "description": "Soil health records for a specific farm in country context"
+    },
+    "/countries/{countryCode}/users/{userId}/farms/{farmId}/diagnoses/{diagnosisId}": {
+      "schema": { "$ref": "#/entities/SavedDiagnosisRecord" },
+      "description": "Diagnostic reports for a specific farm in country context"
+    },
+    "/countries/{countryCode}/users/{userId}/advisories/{advisoryId}": {
+      "schema": { "$ref": "#/entities/SavedAdvisoryRecord" },
+      "description": "Advisory records for user in country context"
+    }
+  }
+}
