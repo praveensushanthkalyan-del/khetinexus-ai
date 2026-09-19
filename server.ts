@@ -5,7 +5,18 @@ import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { retrieveAgriculturalKnowledge } from './server/agriculturalRAG';
 
-dotenv.config();
+// Weather provider cache to prevent repeated Open-Meteo requests.
+const weatherApiCache = new Map<string, {
+  data: any;
+  fetchedAt: number;
+}>();
+
+// Prevent multiple simultaneous requests for the same farm coordinates.
+const weatherApiInflight = new Map<string, Promise<any>>();
+
+const WEATHER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+dotenv.config({ path: '.env.local' });
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
@@ -1262,13 +1273,26 @@ Respond STRICTLY in valid JSON matching this schema:
 
       const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,dew_point_2m,precipitation_probability,precipitation,rain,weathercode,surface_pressure,cloud_cover,et0_fao_evapotranspiration,wind_speed_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,weather_code,weathercode,et0_fao_evapotranspiration&timezone=auto`;
 
-      const omRes = await fetch(omUrl, { signal: AbortSignal.timeout(6000) });
+      const omRes = await fetch(omUrl, {
+        signal: AbortSignal.timeout(6000),
+      });
 
       if (!omRes.ok) {
+        const retryAfter = omRes.headers.get('retry-after');
+
+        if (omRes.status === 429) {
+          throw new Error(
+            retryAfter
+              ? `Open-Meteo rate limit reached. Retry after ${retryAfter} seconds.`
+              : 'Open-Meteo rate limit reached. Please retry later.'
+          );
+        }
+
         throw new Error(`Open-Meteo HTTP ${omRes.status}`);
       }
 
       const omData = await omRes.json();
+
       const curr = omData.current_weather || {};
       const hourly = omData.hourly || {};
       const daily = omData.daily || {};
