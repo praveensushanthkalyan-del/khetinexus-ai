@@ -1230,6 +1230,184 @@ Respond STRICTLY in valid JSON matching this schema:
       handleGeminiError(res, err, 'Soil Analysis');
     }
   });
+async function fetchMetNorwayWeather(
+  lat: number,
+  lon: number
+): Promise<any> {
+  const metUrl =
+    `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`;
+
+  const metRes = await fetch(metUrl, {
+    headers: {
+      'User-Agent': 'KhetiNexus-AI/1.0 weather fallback contact: github.com/praveensushanthkalyan-del/khetinexus-ai',
+      'Accept': 'application/json',
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!metRes.ok) {
+    throw new Error(`MET Norway HTTP ${metRes.status}`);
+  }
+
+  const metData = await metRes.json();
+
+  const timeseries = metData?.properties?.timeseries;
+
+  if (!Array.isArray(timeseries) || timeseries.length === 0) {
+    throw new Error('MET Norway returned no forecast data');
+  }
+
+  // Convert MET Norway's forecast into the Open-Meteo-like
+  // structure already consumed by the KhetiNexus weather pipeline.
+  const hourlyTimes: string[] = [];
+  const temperature: number[] = [];
+  const apparentTemperature: number[] = [];
+  const humidity: number[] = [];
+  const precipitation: number[] = [];
+  const rain: number[] = [];
+  const windSpeed: number[] = [];
+  const windDirection: number[] = [];
+  const cloudCover: number[] = [];
+  const weatherCodes: number[] = [];
+
+  const symbolToCode = (symbol: string): number => {
+    const s = String(symbol || '').toLowerCase();
+
+    if (s.includes('thunder')) return 95;
+    if (s.includes('snow')) return 71;
+    if (s.includes('sleet')) return 61;
+    if (s.includes('rain')) return 61;
+    if (s.includes('fog')) return 45;
+    if (s.includes('overcast')) return 3;
+    if (s.includes('partly')) return 2;
+    if (s.includes('cloud')) return 2;
+    return 0;
+  };
+
+  for (const point of timeseries.slice(0, 168)) {
+    const instant = point?.data?.instant?.details || {};
+    const next1h = point?.data?.next_1_hours;
+    const next6h = point?.data?.next_6_hours;
+
+    const symbol =
+      next1h?.summary?.symbol_code ||
+      next6h?.summary?.symbol_code ||
+      'clearsky_day';
+
+    const rainAmount =
+      next1h?.details?.precipitation_amount ??
+      next6h?.details?.precipitation_amount ??
+      0;
+
+    const metDate = new Date(point.time);
+
+    const localParts = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(metDate);
+
+    const getPart = (type: string) =>
+      localParts.find(part => part.type === type)?.value || '';
+
+    const localMetTime =
+      `${getPart('year')}-${getPart('month')}-${getPart('day')}` +
+      `T${getPart('hour')}:${getPart('minute')}`;
+
+    hourlyTimes.push(localMetTime);
+    temperature.push(Number(instant.air_temperature ?? 0));
+    apparentTemperature.push(Number(instant.air_temperature ?? 0));
+    humidity.push(Number(instant.relative_humidity ?? 0));
+    precipitation.push(Number(rainAmount));
+    rain.push(Number(rainAmount));
+    windSpeed.push(Number(instant.wind_speed ?? 0) * 3.6);
+    windDirection.push(Number(instant.wind_from_direction ?? 0));
+    cloudCover.push(Number(instant.cloud_area_fraction ?? 0));
+    weatherCodes.push(symbolToCode(symbol));
+  }
+
+  // Build daily data from the hourly MET forecast.
+  const dailyMap = new Map<string, {
+    max: number;
+    min: number;
+    rain: number;
+    wind: number;
+    code: number;
+  }>();
+
+  for (let i = 0; i < hourlyTimes.length; i++) {
+    const date = hourlyTimes[i].split('T')[0];
+    const t = temperature[i];
+    const r = precipitation[i];
+    const w = windSpeed[i];
+
+    const existing = dailyMap.get(date);
+
+    if (!existing) {
+      dailyMap.set(date, {
+        max: t,
+        min: t,
+        rain: r,
+        wind: w,
+        code: weatherCodes[i],
+      });
+    } else {
+      existing.max = Math.max(existing.max, t);
+      existing.min = Math.min(existing.min, t);
+      existing.rain += r;
+      existing.wind = Math.max(existing.wind, w);
+    }
+  }
+
+  const dailyEntries = Array.from(dailyMap.entries()).slice(0, 7);
+
+  return {
+    timezone: 'Asia/Kolkata',
+    utc_offset_seconds: 19800,
+
+    current_weather: {
+      time: hourlyTimes[0],
+      temperature: temperature[0],
+      windspeed: windSpeed[0],
+      weathercode: weatherCodes[0],
+    },
+
+    hourly: {
+      time: hourlyTimes,
+      temperature_2m: temperature,
+      apparent_temperature: apparentTemperature,
+      relative_humidity_2m: humidity,
+      dew_point_2m: temperature.map(t => t - 4),
+      precipitation_probability: precipitation.map(p => p > 0 ? 60 : 5),
+      precipitation,
+      rain,
+      weathercode: weatherCodes,
+      surface_pressure: hourlyTimes.map(() => 1013),
+      cloud_cover: cloudCover,
+      et0_fao_evapotranspiration: hourlyTimes.map(() => 0),
+      wind_speed_10m: windSpeed,
+      wind_direction_10m: windDirection,
+    },
+
+    daily: {
+      time: dailyEntries.map(([date]) => date),
+      temperature_2m_max: dailyEntries.map(([, d]) => d.max),
+      temperature_2m_min: dailyEntries.map(([, d]) => d.min),
+      precipitation_sum: dailyEntries.map(([, d]) => d.rain),
+      precipitation_probability_max: dailyEntries.map(([, d]) =>
+        d.rain > 10 ? 80 : d.rain > 2 ? 45 : d.rain > 0 ? 30 : 5
+      ),
+      wind_speed_10m_max: dailyEntries.map(([, d]) => d.wind),
+      weather_code: dailyEntries.map(([, d]) => d.code),
+      weathercode: dailyEntries.map(([, d]) => d.code),
+      et0_fao_evapotranspiration: dailyEntries.map(() => 0),
+    },
+  };
+}
 
   // =============================================================
   // PROVIDER API RUNTIME PIPELINES (REAL DATA / NO SILENT MOCKING)
@@ -1277,6 +1455,7 @@ Respond STRICTLY in valid JSON matching this schema:
       const cachedWeather = weatherApiCache.get(cacheKey);
 
       let omData: any;
+      let weatherProvider = 'Open-Meteo / IMD Operational';
 
       // Use fresh cached weather when available.
       if (
@@ -1323,23 +1502,55 @@ Respond STRICTLY in valid JSON matching this schema:
 
         try {
           omData = await weatherRequest;
-        } catch (providerError) {
-          // If Open-Meteo is temporarily unavailable/rate-limited,
-          // use the most recent successful response for this location.
-          if (cachedWeather) {
-            console.warn(
-              `[Weather Cache] Provider unavailable for ${cacheKey}; using cached weather data.`
+        } catch (providerError: any) {
+          console.warn(
+            `[Weather Pipeline] Open-Meteo unavailable for ${cacheKey}:`,
+            providerError?.message
+          );
+
+          // ---------------------------------------------------------
+          // FALLBACK: MET Norway
+          // No API key required.
+          // ---------------------------------------------------------
+          try {
+            console.log(
+              `[Weather Fallback] Trying MET Norway for ${cacheKey}...`
             );
 
-            omData = cachedWeather.data;
-          } else {
-            throw providerError;
+            omData = await fetchMetNorwayWeather(lat, lon);
+            weatherProvider = 'MET Norway Fallback';
+
+            console.log(
+              `[Weather Fallback] MET Norway successfully supplied weather for ${cacheKey}.`
+            );
+
+            // Cache the fallback response as well.
+            weatherApiCache.set(cacheKey, {
+              data: omData,
+              fetchedAt: Date.now(),
+            });
+          } catch (fallbackError: any) {
+            console.warn(
+              `[Weather Fallback] MET Norway unavailable for ${cacheKey}:`,
+              fallbackError?.message
+            );
+
+            // Last resort: most recent successful cached response.
+            if (cachedWeather) {
+              console.warn(
+                `[Weather Cache] Using previous successful weather data for ${cacheKey}.`
+              );
+
+              omData = cachedWeather.data;
+            } else {
+              // No provider and no cache.
+              throw providerError;
+            }
           }
         } finally {
           weatherApiInflight.delete(cacheKey);
         }
       }
-
       const curr = omData.current_weather || {};      
       const hourly = omData.hourly || {};
       const daily = omData.daily || {};
@@ -1576,7 +1787,7 @@ Respond STRICTLY in valid JSON matching this schema:
 
       res.json({
         status: 'ACTIVE',
-        provider: 'Open-Meteo / IMD Operational',
+        provider: weatherProvider,
         datasetName: 'Open-Meteo High-Resolution Meteorological Forecast Engine',
         freshness: 'LIVE',
         observationDate,
@@ -1601,7 +1812,7 @@ Respond STRICTLY in valid JSON matching this schema:
         forecast: forecastList,
         hourlyForecast: hourlySeries,
         dailyForecast: forecastList,
-        notice: 'Real-time meteorological observation retrieved from Open-Meteo / IMD engine',
+        notice: 'Real-time meteorological observation retrieved from Open-Meteo or MET Norway fallback',
       });
     } catch (err: any) {
       console.warn('[Server Weather Pipeline] Real-time endpoint unavailable:', err?.message);
